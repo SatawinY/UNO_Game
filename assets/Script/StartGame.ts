@@ -41,11 +41,14 @@ export class RandomCardSpawner extends cc.Component {
 
         // Set the sprite frame of the card
         sprite.spriteFrame = cardSpriteFrame;
-        
+
         // Set the card's position using the middleNode's position and offsets
         cardNode.setPosition(this.middleNode.position.x + this.spawnOffsetX, 
                              this.middleNode.position.y + this.spawnOffsetY);
         
+        // Set the zIndex of the cardNode to be lower than the middleNode
+        cardNode.zIndex = -1; // This ensures the card is rendered behind the middleNode
+
         // Add the card to the Middle_node
         this.middleNode.addChild(cardNode);
     }
