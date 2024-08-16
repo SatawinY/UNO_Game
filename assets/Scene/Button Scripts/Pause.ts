@@ -1,30 +1,17 @@
 const { ccclass, property } = cc._decorator;
 
 @ccclass
-export default class PauseToggle extends cc.Component {
+export default class About extends cc.Component {
 
-    private isPaused: boolean = false; // To track the pause state
+    @property(cc.Button)
+    playButton: cc.Button = null; // Assign the Play button in the inspector
 
     onLoad() {
-        // Add click event listener to the button
-        this.node.on('click', this.togglePause, this);
+        // Add a click event listener to the Play button
+        this.playButton.node.on('click', this.onPlayButtonClicked, this);
     }
 
-    togglePause() {
-        if (this.isPaused) {
-            // Resume the game if it's currently paused
-            cc.director.resume();
-            this.isPaused = false;
-            cc.log("Game Resumed");
-            // Optionally change button text to "Pause"
-            this.node.getComponentInChildren(cc.Label).string = "Pause";
-        } else {
-            // Pause the game
-            cc.director.pause();
-            this.isPaused = true;
-            cc.log("Game Paused");
-            // Optionally change button text to "Unpause"
-            this.node.getComponentInChildren(cc.Label).string = "Unpause";
-        }
+    onPlayButtonClicked() {
+        cc.director.loadScene('helloworld'); // Replace 'GameScene' with the name of your target scene
     }
 }

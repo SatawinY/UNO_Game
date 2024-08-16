@@ -3,16 +3,42 @@ const { ccclass, property } = cc._decorator;
 @ccclass
 export default class GameManager extends cc.Component {
     @property(cc.Node)
-    playerNode: cc.Node = null; 
+    playerNode: cc.Node = null;
 
     @property(cc.Node)
-    cpuNode: cc.Node = null; 
+    cpuNode: cc.Node = null;
 
     @property([cc.SpriteFrame])
-    cardSprites: cc.SpriteFrame[] = []; 
+    blueCardSprites: cc.SpriteFrame[] = [];
 
-    private deck: { color: string, number: string | number }[] = [];
-    private currentZOrder: number = 0; // Track the current highest z-order
+    @property([cc.SpriteFrame])
+    greenCardSprites: cc.SpriteFrame[] = [];
+
+    @property([cc.SpriteFrame])
+    redCardSprites: cc.SpriteFrame[] = [];
+
+    @property([cc.SpriteFrame])
+    yellowCardSprites: cc.SpriteFrame[] = [];
+
+    @property([cc.SpriteFrame])
+    skipCardSprites: cc.SpriteFrame[] = [];
+
+    @property([cc.SpriteFrame])
+    reverseCardSprites: cc.SpriteFrame[] = [];
+
+    @property([cc.SpriteFrame])
+    drawTwoCardSprites: cc.SpriteFrame[] = [];
+
+    @property([cc.SpriteFrame])
+    wildCardSprites: cc.SpriteFrame[] = []; // New property for wild cards
+
+    @property([cc.SpriteFrame])
+    wildDrawFourCardSprites: cc.SpriteFrame[] = []; // New property for wild draw four cards
+
+    private deck: { color: string, number: number | string }[] = [];
+    private currentZOrder: number = 0;
+    private lastCpuCard: cc.Node = null;
+    private lastPlayedCardWasSkip: boolean = false;
 
     onLoad() {
         this.initializeDeck();
@@ -21,7 +47,7 @@ export default class GameManager extends cc.Component {
     }
 
     initializeDeck() {
-        const colors = ['red', 'green', 'blue', 'yellow'];
+        const colors = ['blue', 'green', 'red', 'yellow'];
         for (const color of colors) {
             for (let i = 0; i <= 9; i++) {
                 this.deck.push({ color: color, number: i });
@@ -30,8 +56,12 @@ export default class GameManager extends cc.Component {
             this.deck.push({ color: color, number: 'Reverse' });
             this.deck.push({ color: color, number: 'Draw Two' });
         }
-        this.deck.push({ color: 'wild', number: 'Wild' });
-        this.deck.push({ color: 'wild', number: 'Wild Draw Four' });
+
+        // Adding wild cards and wild draw four cards
+        for (let i = 0; i < 4; i++) {
+            this.deck.push({ color: 'wild', number: 'Wild' });
+            this.deck.push({ color: 'wild', number: 'Wild Draw Four' });
+        }
     }
 
     shuffleDeck() {
@@ -44,12 +74,12 @@ export default class GameManager extends cc.Component {
     dealCards() {
         const playerCards = this.getRandomCards(7);
         const cpuCards = this.getRandomCards(7);
-        this.addCardsToNode(playerCards, this.playerNode);
-        this.addCardsToNode(cpuCards, this.cpuNode);
+        this.addCardsToNode(playerCards, this.playerNode, true);
+        this.addCardsToNode(cpuCards, this.cpuNode, false);
     }
 
-    getRandomCards(count: number): { color: string, number: string | number }[] {
-        const randomCards: { color: string, number: string | number }[] = [];
+    getRandomCards(count: number): { color: string, number: number | string }[] {
+        const randomCards: { color: string, number: number | string }[] = [];
         const drawCount = Math.min(count, this.deck.length);
 
         for (let i = 0; i < drawCount; i++) {
@@ -61,56 +91,114 @@ export default class GameManager extends cc.Component {
         return randomCards;
     }
 
-    addCardsToNode(cards: { color: string, number: string | number }[], parentNode: cc.Node) {
-        const cardSpacing = 100; 
-        const startX = -((cards.length - 1) * cardSpacing) / 2; 
+    addCardsToNode(cards: { color: string, number: number | string }[], parentNode: cc.Node, clickable: boolean) {
+        const cardSpacing = 100;
+        const startX = -((cards.length - 1) * cardSpacing) / 2;
 
         cards.forEach((card, index) => {
             const cardNode = new cc.Node();
             const sprite = cardNode.addComponent(cc.Sprite);
             sprite.spriteFrame = this.getCardSprite(card);
-            
+
             cardNode.setPosition(startX + index * cardSpacing, 0);
             cardNode.parent = parentNode;
 
-            cardNode.on(cc.Node.EventType.TOUCH_END, () => {
-                this.moveToCoordinates(cardNode, cc.v2(0, 250)); 
-            });
+            if (clickable) {
+                cardNode.on(cc.Node.EventType.TOUCH_END, () => {
+                    if (this.lastCpuCard) {
+                        this.lastCpuCard.active = false; // Hide the last CPU card played
+                    }
+
+                    this.moveToCoordinates(cardNode, cc.v2(0, 250), () => {
+                        cardNode.active = false; // Hide the player's card after moving
+                        this.lastPlayedCardWasSkip = (card.number === 'Skip');
+                        this.cpuTurn(); // Trigger CPU's turn
+                    });
+                });
+            }
         });
     }
 
-    moveToCoordinates(cardNode: cc.Node, targetPosition: cc.Vec2) {
-        const moveDuration = 0.5; 
-        
-        // Increase the z-order when a card is clicked
+    moveToCoordinates(cardNode: cc.Node, targetPosition: cc.Vec2, callback?: Function) {
+        const moveDuration = 0.5;
+
         this.currentZOrder++;
         cardNode.zIndex = this.currentZOrder;
 
-        const moveTo = cc.moveTo(moveDuration, targetPosition);
-        cardNode.runAction(moveTo);
+        const moveTo = cc.moveTo(moveDuration, targetPosition).easing(cc.easeCubicActionInOut());
+        cardNode.runAction(cc.sequence(moveTo, cc.callFunc(() => {
+            if (callback) callback();
+        })));
     }
 
-    getCardSprite(card: { color: string, number: string | number }) {
-        const index = this.getCardIndex(card);
-        return this.cardSprites[index];
-    }
+    cpuTurn() {
+        if (!this.lastPlayedCardWasSkip) {
+            if (this.cpuNode.children.length === 0) {
+                const cpuCards = this.getRandomCards(1);
+                this.addCardsToNode(cpuCards, this.cpuNode, false);
+            }
 
-    getCardIndex(card: { color: string, number: string | number }): number {
-        const colors = ['red', 'green', 'blue', 'yellow'];
-        const colorIndex = colors.indexOf(card.color);
-        
-        if (colorIndex === -1) {
-            return this.cardSprites.length - 1; 
-        }
+            const cpuCards = this.cpuNode.children;
+            if (cpuCards.length > 0) {
+                const randomIndex = Math.floor(Math.random() * cpuCards.length);
+                const cardNode = cpuCards[randomIndex];
 
-        let numberIndex;
-        if (typeof card.number === 'number') {
-            numberIndex = card.number; 
+                this.moveToCoordinates(cardNode, cc.v2(0, -250), () => {
+                    this.lastCpuCard = cardNode;
+
+                    if (this.playerNode.children.length === 0) {
+                        const playerCards = this.getRandomCards(1);
+                        this.addCardsToNode(playerCards, this.playerNode, true);
+                    }
+                });
+            }
         } else {
-            const actionCards = ['Skip', 'Reverse', 'Draw Two'];
-            numberIndex = actionCards.indexOf(card.number) + 10; 
+            console.log("CPU skips its turn due to player's skip card.");
         }
+    }
 
-        return colorIndex * 13 + numberIndex; 
+    getCardSprite(card: { color: string, number: number | string }) {
+        if (card.color === 'wild') {
+            if (card.number === 'Wild') {
+                return this.wildCardSprites[0]; // Assuming you have at least one wild sprite
+            } else if (card.number === 'Wild Draw Four') {
+                return this.wildDrawFourCardSprites[0]; // Assuming you have at least one wild draw four sprite
+            }
+        } else if (typeof card.number === 'number') {
+            switch (card.color) {
+                case 'blue':
+                    return this.blueCardSprites[card.number];
+                case 'green':
+                    return this.greenCardSprites[card.number];
+                case 'red':
+                    return this.redCardSprites[card.number];
+                case 'yellow':
+                    return this.yellowCardSprites[card.number];
+            }
+        } else {
+            switch (card.number) {
+                case 'Skip':
+                    return this.skipCardSprites[this.getCardColorIndex(card.color)];
+                case 'Reverse':
+                    return this.reverseCardSprites[this.getCardColorIndex(card.color)];
+                case 'Draw Two':
+                    return this.drawTwoCardSprites[this.getCardColorIndex(card.color)];
+            }
+        }
+    }
+
+    getCardColorIndex(color: string): number {
+        switch (color) {
+            case 'blue':
+                return 0;
+            case 'green':
+                return 1;
+            case 'red':
+                return 2;
+            case 'yellow':
+                return 3;
+            default:
+                return 0;
+        }
     }
 }
